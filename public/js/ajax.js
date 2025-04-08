@@ -48,6 +48,29 @@ $("#updatestatus").click(function (e) {
     },
   })
 });
+
+$("#updatestatusestimate").click(function (e) {
+  e.preventDefault();
+  let status = $("#status").val();
+  let estimateId = $("#estimateId").val();
+
+  $.ajax({
+    url: "../models/EstimateModel.php",
+    type: "POST",
+    async: true,
+    data: { action: "updateStatus", status, estimateId },
+    success: function (response) {
+      if (response != 0) {
+        alert("Estado actualizado correctamente");
+        location.reload();
+      }
+    },
+    error: function (error) {
+      console.log("Tenemos el siguiente error:", error);
+    },
+  })
+});
+
   function validateStock() {
     let stock = parseInt($("#stock").html()) || 0;
     let quantity = parseInt($("#product_quantity").val()) || 0;
@@ -612,7 +635,6 @@ function validatePreciofinal(){
 
                 let info = JSON.parse(response);
                 generateEstimatePDF(info.clientId, info.id, total);
-                location.reload();
               } catch (error) {
                 console.error("Error en procesamiento:", error);
                 alert("Error al procesar el presupuesto: " + error.message);

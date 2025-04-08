@@ -3,6 +3,7 @@
 require_once(__DIR__ . "/../../config/db.php");
 setlocale(LC_MONETARY, 'es_MX');
 
+
 // Registrar cliente desde la creacion del presupuesto
 if (isset($_POST["action"]) and $_POST["action"] == "client_register") {
 
@@ -141,49 +142,42 @@ if (isset($_POST['action']) and $_POST['action'] == 'eliminarProducto') {
 if (isset($_POST['action']) && $_POST['action'] == 'procesarPresupuesto') {
 
     session_start();
-    header('Content-Type: application/json'); // Asegura que la respuesta sea JSON
 
-
-    $client_id = $_POST['clientId'] ?? null;
-    $total = $_POST['total'] ?? null;
+    $client_id = intval($_POST['clientId'] ?? 0);
+    $total = intval($_POST['total']);
 
     $token = md5($_SESSION['user_id'] ?? '');
-    $userCreatedId = $_SESSION['user_id'] ?? null;
-    $branchId = $_SESSION['branchId'] ?? null;
-    $storeId = $_POST['storeId'] ?? 0;	
+    $userCreatedId = intval($_SESSION['user_id'] ?? 0);
+    $branchId = intval($_SESSION['branchId'] ?? 0);
+    $products = json_decode($_POST['products'], true);
+    $tipo = $_POST['tipo'] ?? '';
+
+    $storeId = isset($_POST['storeId']) ? intval($_POST['storeId']) : 0;
 
     if (!$client_id || !$userCreatedId || !$branchId) {
-        echo json_encode(['error' => 'Datos insuficientes para procesar el presupuesto.']);
-        exit;
+        die("Datos insuficientes para procesar el presupuesto.");
     }
 
-    $query = mysqli_query($MYSQLI, "SELECT * FROM temporary_details WHERE tokenUser = '$token'");
-    
-    if (!$query) {
-        echo json_encode(['error' => 'Error en la consulta.', 'detalles' => mysqli_error($MYSQLI)]);
-        exit;
-    }
 
-    if (mysqli_num_rows($query) > 0) {
-        $total_with_discount = floatval(str_replace(',', '', $_POST["total"] ?? "0"));
-        $total_con_descuento_formateado = number_format($total_with_discount, 2, '.', '');
 
-        $query_procesar = mysqli_query($MYSQLI, "CALL sp_process_budget($userCreatedId, $client_id, '$token',$total, $branchId, $storeId");
-        
+        $query_procesar = mysqli_query($MYSQLI, "CALL sp_process_budget($userCreatedId, $client_id, $total, $branchId, $storeId, '$token')");
+
         if (!$query_procesar) {
-            echo json_encode(['error' => 'Error al ejecutar el procedimiento almacenado.', 'detalles' => mysqli_error($MYSQLI)]);
-            exit;
+            die("Error al ejecutar el procedimiento almacenado: " . mysqli_error($MYSQLI));
         }
 
-        if (mysqli_num_rows($query_procesar) > 0) {
-            $data = mysqli_fetch_assoc($query_procesar);
-            echo json_encode(['success' => 'Presupuesto procesado correctamente.', 'data' => $data]);
-        } else {
-            echo json_encode(['error' => 'No se generó el presupuesto.', 'detalles' => mysqli_error($MYSQLI)]);
+        if ($MYSQLI->more_results()) {
+            $MYSQLI->next_result();
         }
-    } else {
-        echo json_encode(['error' => 'No se encontraron detalles para procesar el presupuesto.']);
-    }
+
+        $data = mysqli_fetch_assoc($query_procesar);
+
+        if ($data) {
+            echo json_encode($data, JSON_UNESCAPED_UNICODE);
+        } else {
+            echo json_encode(["error" => "No se pudo obtener la factura generada"]);
+        }
+    
 
     mysqli_close($MYSQLI);
     exit;
@@ -290,7 +284,33 @@ if (isset($_POST['action']) && $_POST['action'] == 'addProductToDetail') {
     }
     exit;
 }
+if(isset($_POST['action']) && $_POST['action']== 'ExtraCost') {
+    session_start();
+    $tipo = $_POST['tipo'];
+    $monto = $_POST['monto'];
+    $token = md5($_SESSION['user_id']);
 
+    $query_procesar = mysqli_query($MYSQLI,"CALL sp_register_extra_cost ('$token', $monto,'$tipo')");
+    echo json_encode(["status" => "success", "message" => "Gasto extra agregado."]);
+    exit;
+}
+
+if (isset($_POST['action']) and $_POST['action'] == 'updateStatus') {
+    session_start();
+    $id = $_POST['estimateId'];
+    $status = $_POST['status'];
+
+    $query_update = mysqli_query($MYSQLI, "UPDATE estimates SET status = '$status' WHERE id = $id");
+
+    if ($query_update) {
+        echo json_encode(["status" => "success", "message" => "Estatus actualizado."]);
+    } else {
+        echo json_encode(["status" => "error", "message" => "Error al actualizar el estatus."]);
+    }
+
+    mysqli_close($MYSQLI);
+    exit;
+}
 
 function getStimates(): array
 {
@@ -300,7 +320,26 @@ function getStimates(): array
         die("Error: No se estableció conexión con la base de datos.");
     }
 
-    $query = "SELECT * FROM estimates ORDER BY DATE DESC";
+    $query = "
+    SELECT 
+            estimates.*, 
+            users.name AS user, 
+            estimates.userCreatedId AS user_id,
+            budget_details.PrecioFinal,  -- PrecioFinal de budget_details
+            budget_details.costo,  
+            budget_details.sellingPrice  -- Costo de budget_details
+        FROM 
+            estimates 
+        JOIN 
+            users 
+        ON 
+            estimates.userCreatedId = users.id 
+        JOIN 
+            budget_details 
+        ON 
+            estimates.id = budget_details.id 
+        ORDER BY 
+            estimates.date DESC";
     $result = mysqli_query($MYSQLI, $query);
 
     if (!$result) {
@@ -308,10 +347,21 @@ function getStimates(): array
     }
 
     $rows = [];
-
     while ($row = mysqli_fetch_assoc($result)) {
+        // Calculamos la rentabilidad si el costo es mayor a cero
+        $costo = $row['costo'] ?? 0;
+        $precioFinal = $row['PrecioFinal'] ?? 0;
+        $rentabilidad = (($row['PrecioFinal'] - $row['sellingPrice'] - $row['costo']) / ($row['sellingPrice'] + $row['costo'])) * 100;
+
+
+        // Agregamos la rentabilidad a la fila
+        $row['rentabilidad'] = $rentabilidad;
+
         $rows[] = $row;
     }
+
+
+    return $rows;
 
     mysqli_free_result($result);
 

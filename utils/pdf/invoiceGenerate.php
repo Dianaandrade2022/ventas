@@ -100,12 +100,6 @@ $pdf->Cell(45, 5, 'Nombre', 0, 0, 'L');
 $pdf->Cell(12, 5, 'Cant', 0, 0, 'L');
 $pdf->Cell(14, 5, 'Precio', 0, 0, 'L');
 
-if ($mostrarCostoExtra) {
-    $pdf->Cell(14, 5, 'Costo', 0, 0, 'L');
-}
-if ($mostrarTipoCosto) {
-    $pdf->Cell(14, 5, 'Tipo', 0, 0, 'L');
-}
 
 $pdf->Cell(15, 5, 'Total', 0, 1, 'L');
 $pdf->SetFont('Arial', '', 5.9);
@@ -115,15 +109,6 @@ foreach ($productos_array as $row) {
     $pdf->Cell(47, 5, strtoupper($row['name']), 0, 0, 'L');
     $pdf->Cell(10, 5, $row['quantity'], 0, 0, 'L');
     $pdf->Cell(14, 5, "$ " . number_format($row['PrecioFinal'], 2, '.', ','), 0, 0, 'L');
-
-    if ($mostrarCostoExtra) {
-        $pdf->Cell(14, 5, "$ " . number_format($row['extracost'], 2, '.', ','), 0, 0, 'L');
-    }
-
-    if ($mostrarTipoCosto) {
-        $pdf->Cell(14, 5, strtoupper($row['tipodecosto']), 0, 0, 'L');
-    }
-
     $importe = number_format(($row['quantity'] * $row['PrecioFinal']), 2, '.', ',');
     $pdf->Cell(15, 5, "$ " . $importe, 0, 1, 'L');
 }
@@ -135,19 +120,39 @@ $pdf->SetFont('Arial', 'B', 10);
 
 //mostrar conteo 
 // Mostrar total
-$total_formateado = number_format($result_venta['total'], 2, '.', ',');
-$pdf->Cell(96, 5, 'Total: $ ' . $total_formateado, 0, 1, 'R');
+// Calcular extras y totales
+$total_extracost = 0.0;
+$tipo_costo = "";
+foreach ($productos_array as $producto) {
+    if (!empty($producto['extracost']) && $producto['extracost'] != '0') {
+        $total_extracost = $producto['extracost'];
+    }
+    if (!empty($producto['tipodecosto'])) {
+        $tipo_costo = strtoupper($producto['tipodecosto']);
+    }
+}
+
+$total_final = $result_venta['total'] + $total_extracost;
+
+// Mostrar totales y costos extras
+$pdf->SetFont('Arial', 'B', 10);
+
+if ($total_extracost > 0) {
+    $pdf->Cell(65, 5, 'Costo Extra: $ ' . number_format($total_extracost, 2, '.', ','), 0, 1, 'L');
+}
+if (!empty($tipo_costo)) {
+    $pdf->Cell(65, 5, 'Costo por: ' . $tipo_costo, 0, 1, 'L');
+}
+
+$pdf->Cell(96, 5, 'Total: $ ' . number_format($total_final, 2, '.', ','), 0, 1, 'R');
 
 
-;
 
-
-$pdf->Ln();
 $pdf->SetFont('Arial', 'B', 7);
-$pdf->Cell(40, 5, "Atendido por: " . $_SESSION['name'], 0, 0, 'L');
-$pdf->Ln(10);
-$pdf->SetFont('Arial', '', 7);
-$pdf->Cell(100, 5, "Gracias por su compra", 0, 1, 'C');
+$pdf->Cell(10, 5, "Atendido por: " . $_SESSION['name'], 0, 0, 'L');
+// $pdf->Ln(10);
+// $pdf->SetFont('Arial', '', 7);
+// $pdf->Cell(100, 5, "Gracias por su compra", 0, 1, 'C');
 
 $pdf->Output("Factura$numero_factura.pdf", "I");
 
